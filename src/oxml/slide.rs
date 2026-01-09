@@ -87,7 +87,8 @@ impl ParsedShape {
 
     /// Get all text from shape
     pub fn text(&self) -> String {
-        self.paragraphs.iter()
+        self.paragraphs
+            .iter()
             .map(|p| p.text())
             .collect::<Vec<_>>()
             .join("\n")
@@ -135,6 +136,7 @@ pub struct ParsedSlide {
     pub tables: Vec<ParsedTable>,
     pub title: Option<String>,
     pub body_text: Vec<String>,
+    pub transition: Option<String>,
 }
 
 impl ParsedSlide {
@@ -144,6 +146,7 @@ impl ParsedSlide {
             tables: Vec::new(),
             title: None,
             body_text: Vec::new(),
+            transition: None,
         }
     }
 
@@ -178,7 +181,11 @@ impl SlideParser {
     pub fn parse(xml: &str) -> Result<ParsedSlide, PptxError> {
         let root = XmlParser::parse_str(xml)?;
         let mut slide = ParsedSlide::new();
-
+        if let Some(sp_transition) = root.find_descendant("transition") {
+            if let Some(transition) = sp_transition.children.first() {
+                slide.transition = Some(transition.local_name.clone());
+            }
+        }
         // Find shape tree (spTree)
         if let Some(sp_tree) = root.find_descendant("spTree") {
             // Parse shapes
@@ -214,7 +221,8 @@ impl SlideParser {
 
     fn parse_shape(sp: &XmlElement) -> Option<ParsedShape> {
         // Get shape name from nvSpPr/cNvPr
-        let name = sp.find_descendant("cNvPr")
+        let name = sp
+            .find_descendant("cNvPr")
             .and_then(|e| e.attr("name"))
             .unwrap_or("Shape");
 
@@ -267,8 +275,14 @@ impl SlideParser {
 
                 // Parse run properties
                 if let Some(rpr) = r.find("rPr") {
-                    run.bold = rpr.attr("b").map(|v| v == "1" || v == "true").unwrap_or(false);
-                    run.italic = rpr.attr("i").map(|v| v == "1" || v == "true").unwrap_or(false);
+                    run.bold = rpr
+                        .attr("b")
+                        .map(|v| v == "1" || v == "true")
+                        .unwrap_or(false);
+                    run.italic = rpr
+                        .attr("i")
+                        .map(|v| v == "1" || v == "true")
+                        .unwrap_or(false);
                     run.underline = rpr.attr("u").is_some();
                     run.font_size = rpr.attr("sz").and_then(|v| v.parse().ok());
 
@@ -343,12 +357,16 @@ impl SlideParser {
         for tr in tbl.find_all("tr") {
             let mut row = Vec::new();
             for tc in tr.find_all("tc") {
-                let text = tc.find_descendant("t")
+                let text = tc
+                    .find_descendant("t")
                     .map(|t| t.text_content())
                     .unwrap_or_default();
-                
+
                 let row_span = tc.attr("rowSpan").and_then(|v| v.parse().ok()).unwrap_or(1);
-                let col_span = tc.attr("gridSpan").and_then(|v| v.parse().ok()).unwrap_or(1);
+                let col_span = tc
+                    .attr("gridSpan")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(1);
 
                 row.push(ParsedTableCell {
                     text,
@@ -376,7 +394,7 @@ mod tests {
     #[test]
     fn test_parse_simple_slide() {
         let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
-        <p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" 
+        <p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
                xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
             <p:cSld>
                 <p:spTree>
@@ -419,7 +437,7 @@ mod tests {
     #[test]
     fn test_parse_formatted_text() {
         let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
-        <p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" 
+        <p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
                xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
             <p:cSld>
                 <p:spTree>
